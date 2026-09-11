@@ -1,0 +1,50 @@
+[project]
+name = "evalix"
+version = "0.1.0"
+description = "A small eval harness that tells you which cases your prompt change broke."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "Adam Sawicki" }]
+keywords = ["eval", "evaluation", "llm", "prompt-engineering", "benchmark"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: Testing",
+]
+
+# capix is the default runner. The core never imports it — only
+# `evalix.runners.capix` does — so swapping providers is a `runner=` argument,
+# not a fork. It is a hard dependency for now purely so the zero-config path
+# stays one flag; moving it to an optional extra later is a minor bump.
+dependencies = [
+    "capix>=0.1.2",
+    # Used by the CLI only. A library has no business reading someone else's
+    # .env; an application does.
+    "python-dotenv>=1.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/frycz/evalix"
+Repository = "https://github.com/frycz/evalix"
+Issues = "https://github.com/frycz/evalix/issues"
+
+[project.scripts]
+evalix = "evalix.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/evalix"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
