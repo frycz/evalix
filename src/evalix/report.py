@@ -36,11 +36,21 @@ def render_run(run: Run, diff: Diff | None = None, path=None, show: int = 5) -> 
 
     tok_in = sum(r.input_tokens for r in results)
     tok_out = sum(r.output_tokens for r in results)
+    scorer_in = sum(r.scorer_input_tokens for r in results)
+    scorer_out = sum(r.scorer_output_tokens for r in results)
     cost = run.meta.get("cost_usd")
     tokens = f"  tokens     {tok_in} in / {tok_out} out"
-    if cost is not None:
-        tokens += f"   ≈ ${cost:.4f}"
-    lines.append(tokens)
+    if scorer_in or scorer_out:
+        # A judge often costs more than the run it grades, so it gets its own
+        # line and the cost has to say it includes both.
+        lines.append(tokens)
+        lines.append(f"  scorer     {scorer_in} in / {scorer_out} out")
+        if cost is not None:
+            lines.append(f"  cost       ≈ ${cost:.4f}   (run + scorer)")
+    else:
+        if cost is not None:
+            tokens += f"   ≈ ${cost:.4f}"
+        lines.append(tokens)
 
     errors = [r for r in results if r.error]
     if errors:

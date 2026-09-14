@@ -94,3 +94,17 @@ class TestByTag:
         d = diff(old, new)
         assert d.by_tag["easy"] == (0.0, 1.0, 1)
         assert d.by_tag["edge"] == (0.0, 0.0, 1)
+
+
+def test_compare_returns_named_fields(tmp_path):
+    from evalix import Comparison, compare
+    from evalix.store import RunStore
+
+    store = RunStore(tmp_path)
+    store.save(Run(meta={"case_key": "k", "label": "old"}, results=[Result(id="a", score=0.0)]))
+    store.save(Run(meta={"case_key": "k", "label": "new"}, results=[Result(id="a", score=1.0)]))
+    result = compare("old", "new", runs=tmp_path)
+    assert isinstance(result, Comparison)
+    assert result.diff.fixed == ["a"]
+    assert result.old.meta["label"] == "old"
+    assert "fixed 1" in result.render()

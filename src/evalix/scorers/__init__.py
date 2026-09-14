@@ -6,11 +6,9 @@
 
 from __future__ import annotations
 
-from typing import Callable
-
 from evalix.scorers import builtin
 from evalix.scorers.base import PASS, Context, Score, Scorer, ScorerResult, as_score
-from evalix.scorers.custom import load_custom
+from evalix.scorers.custom import ScorerFileError, load_custom
 from evalix.scorers.judge import judge
 
 BUILTIN: dict[str, Scorer] = {
@@ -48,6 +46,7 @@ __all__ = [
     "Context",
     "Score",
     "Scorer",
+    "ScorerFileError",
     "ScorerResult",
     "as_score",
     "get",

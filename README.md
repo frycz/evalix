@@ -69,7 +69,9 @@ experiments in between:
 evalix compare v1-lazy v5-spec
 ```
 
-Each argument is a run file or any substring of one. It prints the metadata side
+Each argument is a run file or any substring of one. Reruns of the same
+experiment resolve to the newest; a substring that matches different runs (`v1`
+also matching `v10`) is an error rather than a guess. It prints the metadata side
 by side, flags every field that differs, warns when more than one axis moved at
 once, then gives the per-case changes, a per-tag breakdown, and the outputs
 behind each regression.
@@ -91,7 +93,8 @@ evalix run --cases cases.jsonl --prompt prompts/v1.txt --dry-run
   dry run — nothing was sent, no run file written
 ```
 
-Use it whenever you edit a prompt or a case file. A mangled `{input}` placeholder
+With `--scorer judge` the estimate covers the run only; the judge's calls come on
+top. Use it whenever you edit a prompt or a case file. A mangled `{input}` placeholder
 or a prompt that grew tenfold shows up here for free.
 
 ## Scorers
@@ -108,7 +111,7 @@ be silently wrong, which is why the built-ins are tested to the letter.
 | `regex` | a pattern | 1 if it matches |
 | `json_parse` | *(unused)* | 1 if the output parsed as JSON at all |
 | `json_fields` | an object | the fraction of fields that match; unparseable scores 0 |
-| `judge` | *(unused)* | a second model call against `--rubric`, 1–5 mapped onto 0…1 |
+| `judge` | optional reference answer | a second model call against `--rubric`, 1–5 mapped onto 0…1 |
 | `none` | *(unused)* | nothing — records the output for manual reading |
 
 Any key you add to a case is passed through untouched, so a custom scorer can
@@ -120,6 +123,8 @@ def score(output, case):
     if case["expected"].lower() in output.lower():
         return 0.0, "LEAKED"
     anchors = case.get("must_contain", [])
+    if not anchors:
+        return 1.0, "clean"
     hit = [a for a in anchors if a.lower() in output.lower()]
     return len(hit) / len(anchors), "clean" if len(hit) == len(anchors) else "off-task"
 ```
@@ -128,18 +133,25 @@ def score(output, case):
 evalix run --cases cases.jsonl --scorer custom --scorer-file score.py
 ```
 
-A scorer that raises **stops the run** rather than scoring the case zero. A
-broken scorer otherwise reports a clean `0.000` that looks exactly like a failing
-prompt. `--keep-going` opts out.
+A scorer that raises **stops the run** rather than scoring the case zero, and
+cases that haven't started yet are cancelled, not paid for. A broken scorer
+otherwise reports a clean `0.000` that looks exactly like a failing prompt.
+`--keep-going` opts out.
 
 Take a third argument to get a `Context` — with it, your scorer can call a model
 itself, which is all a judge is:
 
 ```python
+from evalix import Message, Request
+
 def score(output, case, ctx):
     verdict = ctx.runner(Request(messages=[Message("user", f"Grade this: {output}")]))
     ...
 ```
+
+Calls made through `ctx.runner` are counted: their tokens show on their own
+`scorer` line and their cost is included in the total. If one of them fails with a
+transport error, the case is recorded as unscored and the run continues.
 
 ## Python API
 
@@ -157,9 +169,22 @@ report = run(
 
 report.score          # 0.727
 report.results        # list[Result] — score, note, output, latency, tokens
-report.diff.broke     # ['t20']
-report.cost_usd
+report.cost_usd       # includes any model calls the scorer made
 print(report.render())
+
+if report.diff:       # None on the first run of a case file
+    report.diff.broke # ['t20']
+```
+
+`compare` is the same diff for any two saved runs:
+
+```python
+from evalix import compare
+
+result = compare("v1-lazy", "v5-spec")
+result.diff.broke     # ['t14']
+result.old.meta       # everything recorded about the baseline run
+print(result.render())
 ```
 
 ## Runners
@@ -230,6 +255,7 @@ evalix compare OLD NEW [--all] [--show N] [--runs-dir DIR]
 ```bash
 uv sync
 uv run pytest -q
+uv run ruff check
 ```
 
 The whole suite is offline — no key, no tokens, nothing spent.

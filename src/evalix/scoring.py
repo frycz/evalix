@@ -16,6 +16,10 @@ class Result:
     manual review) and drops out of every mean. `error` is set when the model
     call failed — those score zero, because a case you could not get an answer
     for is not a case you passed.
+
+    `scorer_*` count the model calls the scorer itself made (a judge). They are
+    kept apart from the run's own tokens because they are usually a different
+    model at a different price.
     """
 
     id: str
@@ -26,6 +30,9 @@ class Result:
     latency: float | None = None
     input_tokens: int = 0
     output_tokens: int = 0
+    scorer_input_tokens: int = 0
+    scorer_output_tokens: int = 0
+    scorer_cost_usd: float | None = 0.0
     error: str | None = None
 
     @property
@@ -36,7 +43,7 @@ class Result:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, row: dict[str, Any]) -> "Result":
+    def from_dict(cls, row: dict[str, Any]) -> Result:
         known = {f for f in cls.__dataclass_fields__}
         return cls(**{k: v for k, v in row.items() if k in known})
 
@@ -64,7 +71,7 @@ class Run:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "Run":
+    def from_dict(cls, data: dict[str, Any]) -> Run:
         return cls(
             meta=data.get("meta", {}),
             results=[Result.from_dict(r) for r in data.get("results", [])],

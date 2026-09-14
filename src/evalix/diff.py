@@ -13,8 +13,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from evalix.scoring import Result, Run
 from evalix.scorers import PASS
+from evalix.scoring import Result, Run
 
 AXES = ("model", "effort", "placement", "prompt")
 

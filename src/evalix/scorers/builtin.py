@@ -26,28 +26,24 @@ def extract_json(text: str) -> Any:
     different failures wanting different prompt fixes.
     """
     text = text.strip()
-    fence = re.search(r"```(?:json)?\s*(.+?)\s*```", text, re.S)
+    fence = re.search(r"```(?:json)?\s*(.+?)\s*```", text, re.DOTALL)
     if fence:
         text = fence.group(1).strip()
     try:
         return json.loads(text)
     except json.JSONDecodeError:
         pass
-    for opener, closer in (("{", "}"), ("[", "]")):
+    # Try each opening bracket in turn and let the real decoder find where the
+    # value ends. Counting brackets by hand miscounts a `}` inside a string.
+    # Objects first: prose like "see [1]" should not beat the actual answer.
+    decoder = json.JSONDecoder()
+    for opener in ("{", "["):
         start = text.find(opener)
-        if start == -1:
-            continue
-        depth = 0
-        for i in range(start, len(text)):
-            if text[i] == opener:
-                depth += 1
-            elif text[i] == closer:
-                depth -= 1
-                if depth == 0:
-                    try:
-                        return json.loads(text[start : i + 1])
-                    except json.JSONDecodeError:
-                        break
+        while start != -1:
+            try:
+                return decoder.raw_decode(text, start)[0]
+            except json.JSONDecodeError:
+                start = text.find(opener, start + 1)
     raise ValueError("no parseable JSON in output")
 
 
@@ -69,7 +65,7 @@ def not_contains(output: str, case, ctx: Context) -> Score:
 
 
 def regex(output: str, case, ctx: Context) -> Score:
-    ok = re.search(str(case.expected), output, re.I | re.S) is not None
+    ok = re.search(str(case.expected), output, re.IGNORECASE | re.DOTALL) is not None
     return Score(1.0 if ok else 0.0, f"pattern {case.expected!r}")
 
 

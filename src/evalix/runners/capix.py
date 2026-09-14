@@ -7,7 +7,7 @@ provider exception through is not a seam.
 
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
 from evalix.runners import (
     MissingCredentials,
@@ -40,7 +40,7 @@ def capix_runner() -> Callable[[Request], Response]:
             raise MissingCredentials(str(exc)) from exc
         except capix.RefusalError as exc:
             raise Refusal(str(exc)) from exc
-        except Exception as exc:  # noqa: BLE001 - anything else is a transport failure
+        except Exception as exc:
             raise RunnerError(f"{type(exc).__name__}: {exc}") from exc
 
         return Response(

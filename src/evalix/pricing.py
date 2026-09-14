@@ -30,7 +30,7 @@ def load_overrides() -> None:
     path = os.environ.get("EVALIX_PRICES")
     if not path or not Path(path).exists():
         return
-    for model, pair in json.loads(Path(path).read_text()).items():
+    for model, pair in json.loads(Path(path).read_text(encoding="utf-8")).items():
         PRICES[model] = (float(pair[0]), float(pair[1]))
 
 

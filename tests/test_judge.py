@@ -64,3 +64,41 @@ def test_uses_a_separate_judge_runner_when_given():
     )
     assert judge("out", CASE, ctx).value == 1.0
     assert len(seen) == 1
+
+
+@pytest.mark.parametrize("verdict", ['{"score": 10}', '{"score": 0}', '{"score": 4.5}',
+                                     '{"score": true}', '{"score": "high"}'])
+def test_an_out_of_range_score_is_not_clamped(verdict):
+    """10 used to become 2.25 and 0 became -0.25, quietly skewing the mean."""
+    score = judge("out", CASE, ctx_with(verdict))
+    assert score.value == 0.0
+    assert "out of range" in score.note
+
+
+@pytest.mark.parametrize("broken", ['{"score": 10, "reason": "said "hi""}',
+                                    '{"score": 4.5, "reason": "said "hi""}'])
+def test_the_invalid_json_fallback_does_not_misread_multi_digit_scores(broken):
+    assert "unparseable verdict" in judge("out", CASE, ctx_with(broken)).note
+
+
+def test_accepts_an_integral_float_or_string():
+    assert judge("out", CASE, ctx_with('{"score": 4.0}')).value == 0.75
+    assert judge("out", CASE, ctx_with('{"score": "4"}')).value == 0.75
+
+
+def test_sends_expected_as_a_reference_answer():
+    seen = []
+
+    def judge_runner(request):
+        seen.append(request.text)
+        return Response(text='{"score": 5}')
+
+    ctx = Context(runner=judge_runner, model="t", config={"rubric": "r"})
+    judge("out", Case(id="d1", input="q", expected={"total": 42}), ctx)
+    judge("out", Case(id="d2", input="q"), ctx)
+    assert '<reference_answer>\n{"total": 42}\n</reference_answer>' in seen[0]
+    assert "reference_answer" not in seen[1]
+
+
+def test_a_long_inline_rubric_is_not_mistaken_for_a_path():
+    assert judge("out", CASE, ctx_with('{"score": 5}', rubric="x" * 5000)).value == 1.0

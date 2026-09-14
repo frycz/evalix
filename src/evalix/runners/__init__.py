@@ -12,7 +12,7 @@ extra turns and tools become a field here instead of a new major version.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Callable, Protocol
+from typing import Any, Protocol
 
 
 class RunnerError(Exception):

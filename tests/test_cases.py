@@ -84,3 +84,28 @@ class TestCaseKey:
         other.mkdir()
         (other / "cases.jsonl").write_text("")
         assert case_key(other / "cases.jsonl", tmp_path / "root") == "cases"
+
+
+class TestErrorLocations:
+    def test_line_numbers_count_comments_and_blanks(self, tmp_path):
+        p = tmp_path / "cases.jsonl"
+        p.write_text('// header\n\n{"id": "a"}\n{"input": "no id"}\n')
+        with pytest.raises(ValueError, match="line 4 has no 'id'"):
+            load_cases(p)
+
+    def test_bad_json_names_the_file_and_line(self, tmp_path):
+        p = tmp_path / "cases.jsonl"
+        p.write_text('// header\n{"id": "a"}\n{"id": "b",}\n')
+        with pytest.raises(ValueError, match=r"cases\.jsonl: invalid JSON at line 3"):
+            load_cases(p)
+
+    def test_a_non_object_line_is_loud(self, tmp_path):
+        p = tmp_path / "cases.jsonl"
+        p.write_text('["a"]\n')
+        with pytest.raises(ValueError, match="line 1 is a list"):
+            load_cases(p)
+
+    def test_reads_utf8_regardless_of_locale(self, tmp_path):
+        p = tmp_path / "cases.jsonl"
+        p.write_bytes('{"id": "a", "input": "zażółć ✓"}\n'.encode())
+        assert load_cases(p)[0].input == "zażółć ✓"

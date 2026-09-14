@@ -79,3 +79,31 @@ class TestRunStore:
     def test_resolve_missing_is_loud(self, tmp_path):
         with pytest.raises(FileNotFoundError):
             RunStore(tmp_path).resolve("nothing")
+
+    def test_previous_skips_json_that_is_not_a_run(self, tmp_path):
+        """A `[1, 2]` in runs/ used to raise AttributeError on every run."""
+        (tmp_path / "list.json").write_text("[1, 2]")
+        (tmp_path / "str.json").write_text('"hello"')
+        (tmp_path / "bad-meta.json").write_text('{"meta": [1]}')
+        (tmp_path / "bad-results.json").write_text('{"meta": {}, "results": [1]}')
+        store = RunStore(tmp_path)
+        store.save(a_run(key="mine"))
+        assert store.previous("mine") is not None
+
+    def test_same_second_runs_do_not_overwrite(self, tmp_path):
+        store = RunStore(tmp_path)
+        first = store.save(a_run(a=0.0))
+        second = store.save(a_run(a=1.0))
+        assert first != second
+        assert store.load(first).results[0].score == 0.0
+        assert store.load(second).results[0].score == 1.0
+
+    def test_resolve_refuses_a_substring_matching_different_runs(self, tmp_path):
+        """`v1` matches `v10` too. Guessing the newest diffs against the wrong baseline."""
+        store = RunStore(tmp_path)
+        store.save(a_run(label="v1", stamp="20260101-000001"))
+        store.save(a_run(label="v10", stamp="20260101-000002"))
+        with pytest.raises(ValueError, match="matches 2 different runs"):
+            store.resolve("v1")
+        _, run = store.resolve("v1__")
+        assert run.meta["label"] == "v1"

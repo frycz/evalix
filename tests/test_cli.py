@@ -77,3 +77,33 @@ class TestCompare:
         assert rc == 0
         assert "0.000 → 1.000" in out
         assert "fixed 1" in out
+
+
+class TestErrorsWithoutTracebacks:
+    @pytest.mark.parametrize(
+        "name, source, message",
+        [
+            ("score.py", "x = 1\n", "no score"),
+            ("score.txt", "def score(o, c): return 1\n", ".py"),
+            ("score.py", "def score(:\n", "syntax error"),
+        ],
+    )
+    def test_a_broken_scorer_file(self, cases, tmp_path, capsys, name, source, message):
+        path = tmp_path / name
+        path.write_text(source)
+        rc = cli.main(["run", "--cases", str(cases), "--scorer", "custom",
+                       "--scorer-file", str(path), "--dry-run"])
+        assert rc == 1
+        assert message in capsys.readouterr().err
+
+    def test_an_ambiguous_compare(self, tmp_path, capsys):
+        from evalix.scoring import Result, Run
+        from evalix.store import RunStore
+
+        store = RunStore(tmp_path / "runs")
+        for label in ("v1", "v10", "v2"):
+            store.save(Run(meta={"case_key": "k", "label": label, "model": "m"},
+                           results=[Result(id="a", score=1.0)]))
+        rc = cli.main(["compare", "v1", "v2", "--runs-dir", str(tmp_path / "runs")])
+        assert rc == 1
+        assert "different runs" in capsys.readouterr().err

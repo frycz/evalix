@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from evalix import Case, Context, Response, load_custom
+from evalix import Case, Context, Response, ScorerFileError, load_custom
 
 TWO_ARG = '''
 def score(output, case):
@@ -54,5 +54,17 @@ class TestCustomScorer:
         assert scorer("x", Case(id="c1"), ctx()) == (1.0, "test-model")
 
     def test_a_file_without_score_is_loud(self, tmp_path):
-        with pytest.raises(AttributeError, match="no score"):
+        with pytest.raises(ScorerFileError, match="no score"):
             load_custom(write(tmp_path, "x = 1\n"))
+
+    def test_a_non_python_file_is_loud(self, tmp_path):
+        with pytest.raises(ScorerFileError, match=r"\.py"):
+            load_custom(write(tmp_path, "def score(o, c): return 1.0\n", name="score.txt"))
+
+    def test_a_syntax_error_names_the_line(self, tmp_path):
+        with pytest.raises(ScorerFileError, match=r"score\.py:2: syntax error"):
+            load_custom(write(tmp_path, "x = 1\ndef score(:\n"))
+
+    def test_an_import_error_in_the_file_is_wrapped(self, tmp_path):
+        with pytest.raises(ScorerFileError, match="ModuleNotFoundError"):
+            load_custom(write(tmp_path, "import no_such_module_evalix\n"))

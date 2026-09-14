@@ -53,17 +53,29 @@ class RunStore:
     def save(self, run: Run) -> Path:
         self.root.mkdir(parents=True, exist_ok=True)
         meta = run.meta
-        stamp = meta.get("timestamp") or dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+        stamp = meta.get("timestamp") or dt.datetime.now().strftime("%Y%m%d-%H%M%S")  # noqa: DTZ005
         name = "__".join(
             _slug(str(part))
             for part in (meta.get("case_key", "cases"), meta.get("label", "run"), meta.get("model", "model"), stamp)
         )
-        path = self.root / f"{name}.json"
-        path.write_text(json.dumps(run.to_dict(), indent=2))
-        return path
+        body = json.dumps(run.to_dict(), indent=2, ensure_ascii=False)
+        # Exclusive create: two runs in the same second get `-2`, `-3` rather
+        # than one silently replacing the other.
+        path, n = self.root / f"{name}.json", 1
+        while True:
+            try:
+                with path.open("x", encoding="utf-8") as f:
+                    f.write(body)
+                return path
+            except FileExistsError:
+                n += 1
+                path = self.root / f"{name}-{n}.json"
 
     def load(self, path: str | Path) -> Run:
-        return Run.from_dict(json.loads(Path(path).read_text()))
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        if not isinstance(data, dict) or not isinstance(data.get("meta", {}), dict):
+            raise ValueError(f"{Path(path).name} is not an evalix run file")  # noqa: TRY004 - bad file
+        return Run.from_dict(data)
 
     def all_runs(self) -> list[Path]:
         if not self.root.exists():
@@ -81,7 +93,9 @@ class RunStore:
                 continue
             try:
                 run = self.load(path)
-            except (json.JSONDecodeError, KeyError):
+            except (OSError, ValueError, KeyError, TypeError, AttributeError):
+                # Anything else that happens to be JSON in runs/ is not ours to
+                # crash on. ValueError covers bad JSON and bad UTF-8 too.
                 continue
             if run.meta.get("case_key") == case_key:
                 run.meta.setdefault("path", str(path))
@@ -89,11 +103,35 @@ class RunStore:
         return None
 
     def resolve(self, needle: str | Path) -> tuple[Path, Run]:
-        """A path, or any substring of a run filename. Newest wins."""
+        """A path, or any substring of a run filename.
+
+        Repeats of the same experiment (same case file, label and model) resolve
+        to the newest. Substrings that hit different experiments — `v1` matching
+        both `v1` and `v10` — are an error rather than a guess, because a diff
+        against the wrong baseline looks exactly like a real one.
+        """
         path = Path(needle)
         if path.is_file():
             return path, self.load(path)
-        matches = [p for p in self.all_runs() if str(needle) in p.name]
+        matches: list[tuple[Path, Run]] = []
+        for candidate in self.all_runs():
+            if str(needle) not in candidate.name:
+                continue
+            try:
+                matches.append((candidate, self.load(candidate)))
+            except (OSError, ValueError, KeyError, TypeError, AttributeError):
+                continue
         if not matches:
             raise FileNotFoundError(f"no run file matching {needle!r} in {self.root}")
-        return matches[-1], self.load(matches[-1])
+
+        experiments = {
+            (run.meta.get("case_key"), run.meta.get("label"), run.meta.get("model"))
+            for _, run in matches
+        }
+        if len(experiments) > 1:
+            names = "\n  ".join(p.name for p, _ in matches[-10:])
+            raise ValueError(
+                f"{needle!r} matches {len(experiments)} different runs — "
+                f"use a longer substring or a path:\n  {names}"
+            )
+        return matches[-1]

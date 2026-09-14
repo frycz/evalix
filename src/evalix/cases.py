@@ -32,10 +32,13 @@ class Case:
     extra: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def from_dict(cls, row: dict[str, Any], *, index: int) -> "Case":
+    def from_dict(cls, row: dict[str, Any], *, line: int | None = None) -> Case:
+        where = f"case at line {line}" if line is not None else "case"
+        if not isinstance(row, dict):
+            raise ValueError(f"{where} is a {type(row).__name__}, not a JSON object")  # noqa: TRY004
         if "id" not in row:
             raise ValueError(
-                f"case at line {index + 1} has no 'id'. Ids are the diff key — without "
+                f"{where} has no 'id'. Ids are the diff key — without "
                 "them every case collides and fixed/broke is meaningless."
             )
         return cls(
@@ -60,7 +63,7 @@ class Case:
     def __contains__(self, key: str) -> bool:
         return self.get(key, _MISSING) is not _MISSING
 
-    def replace(self, **changes: Any) -> "Case":
+    def replace(self, **changes: Any) -> Case:
         from dataclasses import replace
 
         return replace(self, **changes)
@@ -82,13 +85,21 @@ def load_cases(
     is two calls, not six — the limit is a spending cap, so it has to be last.
     """
     path = Path(path)
-    rows: list[dict[str, Any]] = []
-    for line in path.read_text().splitlines():
+    cases: list[Case] = []
+    # Line numbers count every physical line, comments and blanks included, so
+    # they match what an editor shows.
+    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
         line = line.strip()
-        if line and not line.startswith("//"):
-            rows.append(json.loads(line))
-
-    cases = [Case.from_dict(row, index=i) for i, row in enumerate(rows)]
+        if not line or line.startswith("//"):
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"{path}: invalid JSON at line {number}: {exc.msg}") from None
+        try:
+            cases.append(Case.from_dict(row, line=number))
+        except ValueError as exc:
+            raise ValueError(f"{path}: {exc}") from None
 
     if only_tag:
         cases = [c for c in cases if c.tag == only_tag]

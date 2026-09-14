@@ -35,6 +35,13 @@ class TestExtractJson:
     def test_fenced_block(self):
         assert builtin.extract_json('```json\n{"a": 1}\n```') == {"a": 1}
 
+    def test_brackets_inside_strings_do_not_confuse_it(self):
+        assert builtin.extract_json('Sure: {"a": "}"} done') == {"a": "}"}
+        assert builtin.extract_json('Sure: ["]", 1] done') == ["]", 1]
+
+    def test_skips_a_brace_that_is_not_json(self):
+        assert builtin.extract_json('Use {name} here: {"a": 1}') == {"a": 1}
+
     def test_raises_on_garbage(self):
         with pytest.raises(ValueError):
             builtin.extract_json("no json here")

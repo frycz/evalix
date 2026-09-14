@@ -13,7 +13,7 @@ from pathlib import Path
 from evalix import api, report
 from evalix.prompt import PLACEMENTS, PromptError
 from evalix.runners import MissingCredentials
-from evalix.scorers import NAMES, load_custom
+from evalix.scorers import NAMES, ScorerFileError, load_custom
 
 
 def _load_dotenv() -> None:
@@ -127,18 +127,25 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
 
 def _cmd_compare(args: argparse.Namespace) -> int:
-    old_path, new_path, old_run, new_run, d = api.compare(
-        args.old_run, args.new_run, runs=args.runs_dir
-    )
-    print(
-        report.render_comparison(
-            old_path, new_path, old_run, new_run, d, show=args.show, show_all=args.all
-        )
-    )
+    comparison = api.compare(args.old_run, args.new_run, runs=args.runs_dir)
+    print(comparison.render(show=args.show, show_all=args.all))
     return 0
 
 
+def _tolerate_narrow_consoles() -> None:
+    """Print `?` instead of crashing where the console can't encode ✓ → ≈ ⚠.
+
+    A Windows console piped to a file falls back to a legacy code page; one
+    unencodable glyph otherwise kills the run after the money is spent.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(errors="replace")
+
+
 def main(argv: list[str] | None = None) -> int:
+    _tolerate_narrow_consoles()
     _load_dotenv()
     args = build_parser().parse_args(argv)
     try:
@@ -148,9 +155,12 @@ def main(argv: list[str] | None = None) -> int:
     except MissingCredentials as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
-    except (PromptError, api.ScorerError, FileNotFoundError, ValueError, KeyError) as exc:
+    except (PromptError, ScorerFileError, api.ScorerError, OSError, ValueError, KeyError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
+    except KeyboardInterrupt:
+        print("\ninterrupted", file=sys.stderr)
+        return 130
 
 
 if __name__ == "__main__":
